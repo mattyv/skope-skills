@@ -1,0 +1,35 @@
+# Lint and test every skill against a pinned skope release. Scripted tests
+# need no API key; live tests (--test --live) are run by hand before merging
+# a change to a question.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  SKOPE_VERSION: 0.1.0-beta.2
+
+jobs:
+  skills:
+    name: Lint and test skills
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install skope
+        run: |
+          curl -fsSL "https://github.com/mattyv/skope/releases/download/v$SKOPE_VERSION/install.sh" | SKOPE_NO_SKILL=1 sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Every skill lints and passes its tests
+        run: |
+          skope --version
+          status=0
+          for skill in skills/*/SKILL.md; do
+            skope "$skill" --lint || status=1
+            skope "$skill" --test > /dev/null || status=1
+          done
+          exit $status

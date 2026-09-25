@@ -1,0 +1,40 @@
+# Scenarios for `skope SKILL.md --test`. defaults: the script exists, and
+# the branch fails exactly the same 2 tests as the base branch.
+defaults:
+  commands:
+    "test -x scripts/failing-tests.sh": { exit: 0 }
+    Compare.head_failing: 2
+    Compare.base_failing: 2
+    Compare.new: 0
+    Compare.fixed: 0
+    Compare.new_tests: ""
+
+scenarios:
+  same-failures-as-base:
+    outcome: stopped
+    path: [Compare, No new failures]
+    max_ask_calls: 0
+
+  fixes-some-adds-none:
+    commands: { Compare.head_failing: 1, Compare.fixed: 1 }
+    outcome: stopped
+    path: [Compare, No new failures]
+
+  new-failures:
+    commands:
+      Compare.head_failing: 4
+      Compare.new: 2
+      Compare.new_tests: "src/parse.test.ts > parses dates\nsrc/parse.test.ts > rejects empty\n"
+    outcome: handoff
+    handoff_reason: explicit
+    path: [Compare, New failures]
+
+  no-script:
+    commands: { "test -x scripts/failing-tests.sh": { exit: 1 } }
+    outcome: handoff
+    path: [Compare, No script]
+
+  base-tree-fails-to-run:
+    commands: { Compare.base_failing: { exit: 128, stderr: "fatal: not a valid object name: main" } }
+    outcome: handoff
+    handoff_reason: command_failed

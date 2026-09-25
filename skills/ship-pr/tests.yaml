@@ -1,0 +1,78 @@
+# Scenarios for `skope SKILL.md --test`. defaults is a clean branch with an
+# open PR whose checks pass; each scenario lists only what differs.
+defaults:
+  commands:
+    'test "$(git branch --show-current)" != main': { exit: 0 }
+    "git diff --quiet && git diff --cached --quiet": { exit: 0 }
+    "git push -u origin HEAD": { exit: 0 }
+    "gh pr view --json number > /dev/null 2>&1": { exit: 0 }
+    "gh pr create --fill --base main": { exit: 0 }
+    "gh pr checks --watch --fail-fast > /dev/null 2>&1": { exit: 0 }
+    'test "$(gh pr view --json mergeStateStatus -q .mergeStateStatus)" = CLEAN': { exit: 0 }
+    "gh pr merge --merge": { exit: 0 }
+    CI failed.checks: "test (ubuntu-latest)\tfail\t2m\n"
+    CI failed.failed_log: "FAIL src/parse.test.ts > parses dates\nAssertionError: expected 3 to be 4\n"
+    'gh run list --branch "$(git branch --show-current)" --limit 1 --json databaseId -q ''.[0].databaseId'' | xargs -n1 gh run rerun --failed': { exit: 0 }
+    "sleep 15 && gh pr checks --watch --fail-fast > /dev/null 2>&1": { exit: 0 }
+
+scenarios:
+  merges-existing-pr:
+    outcome: stopped
+    path: [Preflight, Checks, Merge]
+    max_ask_calls: 0
+
+  opens-pr-then-merges:
+    commands: { "gh pr view --json number > /dev/null 2>&1": { exit: 1 } }
+    outcome: stopped
+    path: [Preflight, Checks, Merge]
+
+  on-base-branch:
+    commands: { 'test "$(git branch --show-current)" != main': { exit: 1 } }
+    outcome: handoff
+    path: [Preflight, On base]
+
+  uncommitted-changes:
+    commands: { "git diff --quiet && git diff --cached --quiet": { exit: 1 } }
+    outcome: handoff
+    path: [Preflight, Uncommitted]
+
+  push-fails:
+    commands: { "git push -u origin HEAD": { exit: 1, stderr: "rejected: non-fast-forward" } }
+    outcome: handoff
+    handoff_reason: command_failed
+
+  not-mergeable:
+    commands: { 'test "$(gh pr view --json mergeStateStatus -q .mergeStateStatus)" = CLEAN': { exit: 1 } }
+    outcome: handoff
+    path: [Preflight, Checks, Merge, Not mergeable]
+
+  real-ci-failure:
+    commands: { "gh pr checks --watch --fail-fast > /dev/null 2>&1": { exit: 1 } }
+    asks: { CI failed: { chosen: Needs a fix } }
+    outcome: handoff
+    path: [Preflight, Checks, CI failed, Needs a fix]
+
+  flaky-rerun-passes:
+    commands:
+      "gh pr checks --watch --fail-fast > /dev/null 2>&1": { exit: 1 }
+      CI failed.failed_log: "Error: The operation was canceled.\nnpm ERR! network request to https://registry.npmjs.org failed, reason: ETIMEDOUT\n"
+    asks: { CI failed: { chosen: Rerun } }
+    outcome: stopped
+    path: [Preflight, Checks, CI failed, Rerun, Merge]
+
+  flaky-rerun-fails-again:
+    commands:
+      "gh pr checks --watch --fail-fast > /dev/null 2>&1": { exit: 1 }
+      "sleep 15 && gh pr checks --watch --fail-fast > /dev/null 2>&1": { exit: 1 }
+      CI failed.failed_log: "Error: The operation was canceled.\nnpm ERR! network request to https://registry.npmjs.org failed, reason: ETIMEDOUT\n"
+    asks: { CI failed: { chosen: Rerun } }
+    outcome: handoff
+    path: [Preflight, Checks, CI failed, Rerun, Needs a fix]
+
+  # Scripted only: a live run can't force an unsure answer.
+  unsure-about-failure:
+    commands: { "gh pr checks --watch --fail-fast > /dev/null 2>&1": { exit: 1 } }
+    answers: { CI failed.ask: unsure }
+    live: { min_hit_rate: 0 }
+    outcome: handoff
+    handoff_reason: gate_failed

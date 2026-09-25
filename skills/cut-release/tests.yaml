@@ -1,0 +1,64 @@
+# Scenarios for `skope SKILL.md --test`. Scenarios can't set params, so these
+# run with the default version 0.0.0 and fake the "version is set" check.
+defaults:
+  commands:
+    "test 0.0.0 != 0.0.0": { exit: 0 }
+    'git fetch -q origin main --tags && test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"': { exit: 0 }
+    "grep -qF 0.0.0 package.json": { exit: 0 }
+    "git rev-parse -q --verify refs/tags/v0.0.0": { exit: 1 }
+    'test "$(gh run list --commit "$(git rev-parse HEAD)" --workflow ci.yml --limit 1 --json conclusion -q ''.[0].conclusion'')" = success': { exit: 0 }
+    "git tag -a v0.0.0 -m v0.0.0": { exit: 0 }
+    "git push origin v0.0.0": { exit: 0 }
+    "sleep 20 && gh run list --workflow release.yml --branch v0.0.0 --limit 1 --json databaseId -q '.[0].databaseId' | xargs -n1 gh run watch --exit-status > /dev/null": { exit: 0 }
+    "gh release view v0.0.0 --json assets -q '.assets | length' | grep -qv '^0$'": { exit: 0 }
+    Release failed.failed_log: "Container image\tBuild\tError: Cannot find module '/app/scripts/postinstall.mjs'\n"
+    Release failed.published: "not published\n"
+
+scenarios:
+  releases:
+    outcome: stopped
+    path: [Preflight, Release run, Published]
+    max_ask_calls: 0
+
+  version-not-set:
+    commands: { "test 0.0.0 != 0.0.0": { exit: 1 } }
+    outcome: handoff
+    path: [Preflight, No version]
+
+  not-at-base:
+    commands:
+      'git fetch -q origin main --tags && test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"': { exit: 1 }
+    outcome: handoff
+    path: [Preflight, Not at base]
+
+  version-file-disagrees:
+    commands: { "grep -qF 0.0.0 package.json": { exit: 1 } }
+    outcome: handoff
+    path: [Preflight, Version mismatch]
+
+  tag-exists:
+    commands: { "git rev-parse -q --verify refs/tags/v0.0.0": { exit: 0 } }
+    outcome: handoff
+    path: [Preflight, Tag exists]
+
+  ci-not-green:
+    commands:
+      'test "$(gh run list --commit "$(git rev-parse HEAD)" --workflow ci.yml --limit 1 --json conclusion -q ''.[0].conclusion'')" = success': { exit: 1 }
+    outcome: handoff
+    path: [Preflight, CI not green]
+
+  push-rejected:
+    commands: { "git push origin v0.0.0": { exit: 1, stderr: "rejected" } }
+    outcome: handoff
+    handoff_reason: command_failed
+
+  release-run-fails:
+    commands:
+      "sleep 20 && gh run list --workflow release.yml --branch v0.0.0 --limit 1 --json databaseId -q '.[0].databaseId' | xargs -n1 gh run watch --exit-status > /dev/null": { exit: 1 }
+    outcome: handoff
+    path: [Preflight, Release run, Release failed]
+
+  release-has-no-assets:
+    commands: { "gh release view v0.0.0 --json assets -q '.assets | length' | grep -qv '^0$'": { exit: 1 } }
+    outcome: handoff
+    path: [Preflight, Release run, Published, Release failed]

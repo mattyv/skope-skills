@@ -1,0 +1,84 @@
+# Scenarios for `skope SKILL.md --test`. defaults: the branch's latest run
+# failed in a test job.
+defaults:
+  commands:
+    'gh run list --branch "$(git branch --show-current)" --limit 1 --json conclusion -q ''.[0].conclusion'' | grep -qx failure': { exit: 0 }
+    Latest run.failed_jobs: "test (ubuntu-latest)\n"
+    Latest run.failed_log: "test\tRun tests\tFAIL src/parse.test.ts > parses dates\ntest\tRun tests\tAssertionError: expected 3 to be 4\n"
+    Lint or format.lint_errors: "src/a.ts:3:1 error Unexpected var, use let or const instead  no-var\n"
+    Type error.type_errors: "src/a.ts(3,7): error TS2322: Type 'string' is not assignable to type 'number'.\n"
+    Test failure.test_errors: "12:FAIL src/parse.test.ts > parses dates\n13:AssertionError: expected 3 to be 4\n"
+    Build or dependency.build_errors: "npm ERR! code ERESOLVE\nnpm ERR! Could not resolve dependency: peer react@18\n"
+    'gh run list --branch "$(git branch --show-current)" --limit 1 --json databaseId -q ''.[0].databaseId'' | xargs -n1 gh run rerun --failed': { exit: 0 }
+
+scenarios:
+  latest-run-passed:
+    commands:
+      'gh run list --branch "$(git branch --show-current)" --limit 1 --json conclusion -q ''.[0].conclusion'' | grep -qx failure': { exit: 1 }
+    outcome: stopped
+    path: [Latest run, Not failing]
+    max_ask_calls: 0
+
+  test-failure:
+    asks: { Latest run: { chosen: Test failure } }
+    outcome: handoff
+    path: [Latest run, Test failure]
+
+  type-error:
+    commands:
+      Latest run.failed_jobs: "typecheck\n"
+      Latest run.failed_log: "typecheck\tType check\tsrc/a.ts(3,7): error TS2322: Type 'string' is not assignable to type 'number'.\n"
+    asks: { Latest run: { chosen: Type error } }
+    outcome: handoff
+    path: [Latest run, Type error]
+
+  lint:
+    commands:
+      Latest run.failed_jobs: "lint\n"
+      Latest run.failed_log: "lint\tLint\tsrc/a.ts:3:1 error Unexpected var, use let or const instead  no-var\nlint\tLint\t1 problem (1 error, 0 warnings)\n"
+    asks: { Latest run: { chosen: Lint or format } }
+    outcome: handoff
+    path: [Latest run, Lint or format]
+
+  dependency:
+    commands:
+      Latest run.failed_jobs: "build\n"
+      Latest run.failed_log: "build\tInstall\tnpm ERR! code ERESOLVE\nbuild\tInstall\tnpm ERR! Could not resolve dependency: peer react@18\n"
+    asks: { Latest run: { chosen: Build or dependency } }
+    outcome: handoff
+    path: [Latest run, Build or dependency]
+
+  flaky-reruns:
+    commands:
+      Latest run.failed_log: "test\tSet up job\tError: The operation was canceled.\ntest\tSet up job\tThe runner has received a shutdown signal.\n"
+    asks: { Latest run: { chosen: Flaky or infrastructure } }
+    outcome: stopped
+    path: [Latest run, Flaky or infrastructure]
+
+  flaky-rerun-fails-to-start:
+    commands:
+      Latest run.failed_log: "test\tSet up job\tError: The operation was canceled.\ntest\tSet up job\tThe runner has received a shutdown signal.\n"
+      'gh run list --branch "$(git branch --show-current)" --limit 1 --json databaseId -q ''.[0].databaseId'' | xargs -n1 gh run rerun --failed': { exit: 1 }
+    asks: { Latest run: { chosen: Flaky or infrastructure } }
+    outcome: handoff
+    handoff_reason: command_failed
+
+  none-fit:
+    commands:
+      Latest run.failed_jobs: "deploy\n"
+      Latest run.failed_log: "deploy\tDeploy\tError: Deployment to environment production was rejected: required reviewers have not approved.\ndeploy\tDeploy\tWaiting for approval timed out after 30 days.\n"
+    asks: { Latest run: { chosen: Investigate } }
+    outcome: handoff
+    path: [Latest run, Investigate]
+
+  # Scripted only: a live run can't force an unsure answer.
+  unsure:
+    answers: { Latest run.ask: unsure }
+    live: { min_hit_rate: 0 }
+    outcome: handoff
+    handoff_reason: gate_failed
+
+  log-unreadable:
+    commands: { Latest run.failed_log: { exit: 1, stderr: "HTTP 404: Not Found" } }
+    outcome: handoff
+    handoff_reason: command_failed
