@@ -1,6 +1,6 @@
 ---
 name: cut-release
-description: Cut a tagged release from the tip of the base branch - check the version, the tag and CI, then tag, push, watch the release workflow and confirm the release has its files. Use when a version bump is merged and it's time to release.
+description: Cut a tagged release from the tip of the base branch - check the version, the tag and CI, then tag, push, watch the release workflow and confirm the release has files attached (one with none counts as failed). Use when a version bump is merged and it's time to release.
 ---
 
 # Cut a release
@@ -14,7 +14,7 @@ params:
   version: 0.0.0              # set it: --param version=1.2.0
   tag_prefix: v
   base: main
-  version_file: package.json  # must mention the version
+  version_file: package.json  # a `version = "…"` or `"version": "…"` line, as package.json, pyproject.toml and Cargo.toml have
   ci_workflow: ci.yml         # must have passed on the commit being tagged
   release_workflow: release.yml
 limits:
@@ -32,20 +32,24 @@ Check everything the release depends on before creating the tag.
 
 - **check** `test {version} != 0.0.0` succeeds · else [No version]
 - **check** `git fetch -q origin {base} --tags && test "$(git rev-parse HEAD)" = "$(git rev-parse origin/{base})"` succeeds · else [Not at base]
-- **check** `grep -qF {version} {version_file}` succeeds · else [Version mismatch]
-- **check** `git rev-parse -q --verify refs/tags/{tag_prefix}{version}` succeeds → [Tag exists]
+- **check** `grep -qE '^ *"?version"? *[:=] *"{version}"' {version_file}` succeeds · else [Version mismatch]
+- **check** `git ls-remote --exit-code --tags origin refs/tags/{tag_prefix}{version}` succeeds → [Tag exists]
+- **check** `git rev-parse -q --verify refs/tags/{tag_prefix}{version}` succeeds → [Local tag only]
 - **check** `test "$(gh run list --commit "$(git rev-parse HEAD)" --workflow {ci_workflow} --limit 1 --json conclusion -q '.[0].conclusion')" = success` succeeds · else [CI not green]
 - **do** `git tag -a {tag_prefix}{version} -m {tag_prefix}{version}`
 - **do** `git push origin {tag_prefix}{version}`
 - **then** [Release run]
 
 ## Release run
-Wait for the release workflow the tag started.
+Wait for the release workflow the tag push started; it must be triggered by
+the pushed tag (usually `on: push: tags:`), and it can take a few seconds to
+appear. Poll for it: up to 18 tries, 10 seconds apart (about three minutes).
 
-- **check** `sleep 20 && gh run list --workflow {release_workflow} --branch {tag_prefix}{version} --limit 1 --json databaseId -q '.[0].databaseId' | xargs -n1 gh run watch --exit-status > /dev/null` succeeds → [Published] · else [Release failed]
+- **check** `i=0; while [ "$i" -lt 18 ]; do id=$(gh run list --workflow {release_workflow} --branch {tag_prefix}{version} --limit 1 --json databaseId -q '.[0].databaseId'); echo "$id" | grep -qx '[0-9][0-9]*' && exec gh run watch --exit-status "$id" > /dev/null; i=$((i + 1)); sleep 10; done; exit 1` succeeds → [Published] · else [Release failed]
 
 ## Published
-The workflow passed. Confirm the release exists and has files attached.
+The workflow passed. Confirm the release exists and has files attached - one
+with no assets counts as failed here, since nothing downloadable was produced.
 
 - **check** `gh release view {tag_prefix}{version} --json assets -q '.assets | length' | grep -qv '^0$'` succeeds → stop · else [Release failed]
 
@@ -90,13 +94,22 @@ The version file doesn't mention the version being released.
 Bump the version in `version_file` in a pull request, merge it, and run again.
 
 ## Tag exists
-A tag for this version already exists.
+A tag for this version already exists on `origin`.
 
 - **hand off**
 
 Check `gh release view {tag_prefix}{version}`. If the version is already
 released, release the next one. If the tag exists without a release, a person
 decides whether to rerun the release workflow for it.
+
+## Local tag only
+A tag for this version exists locally but not on `origin`, most likely left
+by a tag push that failed partway.
+
+- **hand off**
+
+Delete the local tag (`git tag -d {tag_prefix}{version}`) and run this skill
+again.
 
 ## CI not green
 CI hasn't passed on the commit to be tagged: it failed, is still running, or never ran.

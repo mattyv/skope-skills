@@ -2,17 +2,19 @@
 # open PR whose checks pass; each scenario lists only what differs.
 defaults:
   commands:
+    'test -n "$(git branch --show-current)"': { exit: 0 }
     'test "$(git branch --show-current)" != main': { exit: 0 }
     "git diff --quiet && git diff --cached --quiet": { exit: 0 }
     "git push -u origin HEAD": { exit: 0 }
     "gh pr view --json number > /dev/null 2>&1": { exit: 0 }
     "gh pr create --fill --base main": { exit: 0 }
+    'i=0; while [ "$i" -lt 6 ]; do gh pr checks 2>&1 | grep -q "no checks reported" || exit 0; i=$((i + 1)); sleep 10; done; exit 1': { exit: 0 }
     "gh pr checks --watch --fail-fast > /dev/null 2>&1": { exit: 0 }
     'test "$(gh pr view --json mergeStateStatus -q .mergeStateStatus)" = CLEAN': { exit: 0 }
     "gh pr merge --merge": { exit: 0 }
     CI failed.checks: "test (ubuntu-latest)\tfail\t2m\n"
     CI failed.failed_log: "FAIL src/parse.test.ts > parses dates\nAssertionError: expected 3 to be 4\n"
-    'gh run list --branch "$(git branch --show-current)" --limit 1 --json databaseId -q ''.[0].databaseId'' | xargs -n1 gh run rerun --failed': { exit: 0 }
+    'gh run list --commit "$(git rev-parse HEAD)" --status failure --limit 1 --json databaseId -q ''.[0].databaseId'' | grep -x ''[0-9][0-9]*'' | xargs -n1 gh run rerun --failed': { exit: 0 }
     "sleep 15 && gh pr checks --watch --fail-fast > /dev/null 2>&1": { exit: 0 }
 
 scenarios:
@@ -31,6 +33,11 @@ scenarios:
     outcome: handoff
     path: [Preflight, On base]
 
+  detached-head:
+    commands: { 'test -n "$(git branch --show-current)"': { exit: 1 } }
+    outcome: handoff
+    path: [Preflight, On base]
+
   uncommitted-changes:
     commands: { "git diff --quiet && git diff --cached --quiet": { exit: 1 } }
     outcome: handoff
@@ -40,6 +47,12 @@ scenarios:
     commands: { "git push -u origin HEAD": { exit: 1, stderr: "rejected: non-fast-forward" } }
     outcome: handoff
     handoff_reason: command_failed
+
+  no-checks:
+    commands:
+      'i=0; while [ "$i" -lt 6 ]; do gh pr checks 2>&1 | grep -q "no checks reported" || exit 0; i=$((i + 1)); sleep 10; done; exit 1': { exit: 1 }
+    outcome: handoff
+    path: [Preflight, Checks, No checks]
 
   not-mergeable:
     commands: { 'test "$(gh pr view --json mergeStateStatus -q .mergeStateStatus)" = CLEAN': { exit: 1 } }
@@ -76,3 +89,11 @@ scenarios:
     live: { min_hit_rate: 0 }
     outcome: handoff
     handoff_reason: gate_failed
+
+  # Scripted only: a live run can't force the backend to be unavailable.
+  ask-unavailable:
+    commands: { "gh pr checks --watch --fail-fast > /dev/null 2>&1": { exit: 1 } }
+    answers: { CI failed.ask: unavailable }
+    live: { min_hit_rate: 0 }
+    outcome: handoff
+    handoff_reason: ask_unavailable

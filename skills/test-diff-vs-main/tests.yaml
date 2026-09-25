@@ -3,6 +3,7 @@
 defaults:
   commands:
     "test -x scripts/failing-tests.sh": { exit: 0 }
+    "git fetch -q origin 2>/dev/null || true": { exit: 0 }
     Compare.head_failing: 2
     Compare.base_failing: 2
     Compare.new: 0
@@ -35,6 +36,6 @@ scenarios:
     path: [Compare, No script]
 
   base-tree-fails-to-run:
-    commands: { Compare.base_failing: { exit: 128, stderr: "fatal: not a valid object name: main" } }
+    commands: { Compare.base_failing: { exit: 128, stderr: "fatal: not a valid object name: origin/main" } }
     outcome: handoff
     handoff_reason: command_failed

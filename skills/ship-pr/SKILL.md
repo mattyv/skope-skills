@@ -23,8 +23,9 @@ never merge a pull request GitHub doesn't call clean, and never rerun CI more
 than once: a second failure is a real one. Needs `git` and an authenticated `gh`.
 
 ## Preflight
-Check the branch is one to ship: not the base branch, and nothing left uncommitted.
+Check the branch is one to ship: not detached, not the base branch, and nothing left uncommitted.
 
+- **check** `test -n "$(git branch --show-current)"` succeeds · else [On base]
 - **check** `test "$(git branch --show-current)" != {base}` succeeds · else [On base]
 - **check** `git diff --quiet && git diff --cached --quiet` succeeds · else [Uncommitted]
 - **do** `git push -u origin HEAD`
@@ -33,8 +34,12 @@ Check the branch is one to ship: not the base branch, and nothing left uncommitt
 - **then** [Checks]
 
 ## Checks
-Wait for every CI check on the pull request.
+Wait for every CI check on the pull request. Checks can take a few seconds to
+register after the pull request is created or a push lands, so first wait for
+them to appear: up to 6 tries, 10 seconds apart (about a minute), before
+giving up.
 
+- **check** `i=0; while [ "$i" -lt 6 ]; do gh pr checks 2>&1 | grep -q "no checks reported" || exit 0; i=$((i + 1)); sleep 10; done; exit 1` succeeds · else [No checks]
 - **check** `gh pr checks --watch --fail-fast > /dev/null 2>&1` succeeds → [Merge] · else [CI failed]
 
 ## Merge
@@ -48,7 +53,7 @@ CI passed. Merge only when GitHub says the pull request merges cleanly.
 A check failed. Decide from the checks and the failed job's log whether the change caused it.
 
 - **run** `gh pr checks 2>&1 | head -n 40` as checks
-- **run** `gh run list --branch "$(git branch --show-current)" --limit 1 --json databaseId -q '.[0].databaseId' | xargs -n1 gh run view --log-failed 2>&1 | tail -n 120` as failed_log
+- **run** `gh run list --commit "$(git rev-parse HEAD)" --status failure --limit 1 --json databaseId -q '.[0].databaseId' | grep -x '[0-9][0-9]*' | xargs -n1 gh run view --log-failed 2>&1 | tail -n 120` as failed_log
 - **ask** Given {checks} and {failed_log}, what should happen next? · sure 85%
   - [Rerun]
   - [Needs a fix]
@@ -56,7 +61,7 @@ A check failed. Decide from the checks and the failed job's log whether the chan
 ## Rerun
 The failure looks flaky or infrastructural, not caused by the change: a network or registry timeout, a cancelled or lost runner, a rate limit, a service that didn't start.
 
-- **do** `gh run list --branch "$(git branch --show-current)" --limit 1 --json databaseId -q '.[0].databaseId' | xargs -n1 gh run rerun --failed`
+- **do** `gh run list --commit "$(git rev-parse HEAD)" --status failure --limit 1 --json databaseId -q '.[0].databaseId' | grep -x '[0-9][0-9]*' | xargs -n1 gh run rerun --failed`
 - **check** `sleep 15 && gh pr checks --watch --fail-fast > /dev/null 2>&1` succeeds → [Merge] · else [Needs a fix]
 
 ## Needs a fix
@@ -68,8 +73,18 @@ Read `failed_log` in the handoff record: it's the tail of the failed job's
 log. Fix the cause, commit, and run this skill again. Don't rerun CI hoping it
 passes.
 
+## No checks
+No CI check has appeared on the pull request within about a minute of waiting.
+
+- **hand off**
+
+The repository may have no CI checks configured, or they never started (a
+missing workflow trigger, a paused workflow). If that's expected, merge by
+hand once you've confirmed it's safe. Otherwise fix the workflow trigger and
+run this skill again.
+
 ## On base
-The current branch is the base branch, so there's nothing to ship as a pull request.
+The current branch is the base branch, or there's no current branch to push (a detached `HEAD`), so there's nothing to ship as a pull request.
 
 - **hand off**
 
