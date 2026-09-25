@@ -1,6 +1,6 @@
-# Lint and test every skill against a pinned skope release. Scripted tests
-# need no API key; live tests (--test --live) are run by hand before merging
-# a change to a question.
+# Lint and test every skope skill against a pinned skope release, and unit-test
+# the scripts and real commands behind all the skills. Nothing here needs an API
+# key; live tests (--test --live) and the known-answer checks are run by hand.
 name: CI
 
 on:
@@ -16,7 +16,13 @@ env:
 jobs:
   skills:
     name: Lint and test skills
-    runs-on: ubuntu-latest
+    # Both OSes: the unit tests run only python3, git, awk and sort, but macOS's
+    # versions are BSD (awk, wc, tr, comm), not GNU, and the skope install script
+    # supports darwin-arm64, so this catches a command that only works on GNU tools.
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -24,12 +30,17 @@ jobs:
         run: |
           curl -fsSL "https://github.com/mattyv/skope/releases/download/v$SKOPE_VERSION/install.sh" | SKOPE_NO_SKILL=1 sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Every skill lints and passes its tests
+      - name: Every skope skill lints and passes its tests
         run: |
           skope --version
           status=0
           for skill in skills/*/SKILL.md; do
+            grep -q '^```skope$' "$skill" || continue   # plain agent skills have no skope block
             skope "$skill" --lint || status=1
             skope "$skill" --test > /dev/null || status=1
           done
           exit $status
+      # The splitters, the git record format and test-diff-vs-main with real commands.
+      # Needs skope from the step above; nothing here calls a model.
+      - name: Unit tests
+        run: python3 -m unittest discover tests -v

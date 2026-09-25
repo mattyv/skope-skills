@@ -1,20 +1,20 @@
-# Scenarios for `skope SKILL.md --test`. defaults: the branch's latest run
-# failed in a test job.
+# Scenarios for `skope SKILL.md --test`. defaults: the current commit has a
+# failed run, which failed in a test job.
 defaults:
   commands:
-    'gh run list --branch "$(git branch --show-current)" --limit 1 --json conclusion -q ''.[0].conclusion'' | grep -qx failure': { exit: 0 }
+    "gh run list --commit \"$(git rev-parse HEAD)\" --status failure --limit 1 --json databaseId -q '.[0].databaseId' | grep -qx '[0-9][0-9]*'": { exit: 0 }
     Latest run.failed_jobs: "test (ubuntu-latest)\n"
     Latest run.failed_log: "test\tRun tests\tFAIL src/parse.test.ts > parses dates\ntest\tRun tests\tAssertionError: expected 3 to be 4\n"
     Lint or format.lint_errors: "src/a.ts:3:1 error Unexpected var, use let or const instead  no-var\n"
     Type error.type_errors: "src/a.ts(3,7): error TS2322: Type 'string' is not assignable to type 'number'.\n"
     Test failure.test_errors: "12:FAIL src/parse.test.ts > parses dates\n13:AssertionError: expected 3 to be 4\n"
     Build or dependency.build_errors: "npm ERR! code ERESOLVE\nnpm ERR! Could not resolve dependency: peer react@18\n"
-    'gh run list --branch "$(git branch --show-current)" --limit 1 --json databaseId -q ''.[0].databaseId'' | xargs -n1 gh run rerun --failed': { exit: 0 }
+    "gh run list --commit \"$(git rev-parse HEAD)\" --status failure --limit 1 --json databaseId -q '.[0].databaseId' | grep -x '[0-9][0-9]*' | xargs -n1 gh run rerun --failed": { exit: 0 }
 
 scenarios:
   latest-run-passed:
     commands:
-      'gh run list --branch "$(git branch --show-current)" --limit 1 --json conclusion -q ''.[0].conclusion'' | grep -qx failure': { exit: 1 }
+      "gh run list --commit \"$(git rev-parse HEAD)\" --status failure --limit 1 --json databaseId -q '.[0].databaseId' | grep -qx '[0-9][0-9]*'": { exit: 1 }
     outcome: stopped
     path: [Latest run, Not failing]
     max_ask_calls: 0
@@ -58,7 +58,7 @@ scenarios:
   flaky-rerun-fails-to-start:
     commands:
       Latest run.failed_log: "test\tSet up job\tError: The operation was canceled.\ntest\tSet up job\tThe runner has received a shutdown signal.\n"
-      'gh run list --branch "$(git branch --show-current)" --limit 1 --json databaseId -q ''.[0].databaseId'' | xargs -n1 gh run rerun --failed': { exit: 1 }
+      "gh run list --commit \"$(git rev-parse HEAD)\" --status failure --limit 1 --json databaseId -q '.[0].databaseId' | grep -x '[0-9][0-9]*' | xargs -n1 gh run rerun --failed": { exit: 1 }
     asks: { Latest run: { chosen: Flaky or infrastructure } }
     outcome: handoff
     handoff_reason: command_failed
@@ -77,6 +77,13 @@ scenarios:
     live: { min_hit_rate: 0 }
     outcome: handoff
     handoff_reason: gate_failed
+
+  # Scripted only: a live run can't force the backend to be unavailable.
+  ask_unavailable:
+    answers: { Latest run.ask: unavailable }
+    live: { min_hit_rate: 0 }
+    outcome: handoff
+    handoff_reason: ask_unavailable
 
   log-unreadable:
     commands: { Latest run.failed_log: { exit: 1, stderr: "HTTP 404: Not Found" } }

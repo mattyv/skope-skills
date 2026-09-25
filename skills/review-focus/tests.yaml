@@ -3,6 +3,7 @@
 defaults:
   commands:
     'command -v semgrep > /dev/null && semgrep --help 2>&1 | grep -q "grep by meaning"': { exit: 0 }
+    "git rev-parse -q --verify origin/main > /dev/null": { exit: 0 }
     Scan.hunks: 6
     Scan.weakens: 0
     Scan.errors: 0
@@ -24,10 +25,10 @@ scenarios:
     outcome: stopped
     path: [Scan, Cosmetic only]
 
-  no-changes:
+  no-code-changes:
     commands: { Scan.hunks: 0 }
     outcome: stopped
-    path: [Scan, No changes]
+    path: [Scan, No code changes]
 
   weakens-a-check:
     commands: { Scan.weakens: 1 }
@@ -54,8 +55,13 @@ scenarios:
     outcome: handoff
     path: [Scan, No semgrep]
 
+  no-base:
+    commands: { "git rev-parse -q --verify origin/main > /dev/null": { exit: 1 } }
+    outcome: handoff
+    path: [Scan, No base]
+
   diff-fails:
-    commands: { Scan.hunks: { exit: 128, stderr: "fatal: ambiguous argument 'main...HEAD'" } }
+    commands: { Scan.hunks: { exit: 128, stderr: "fatal: ambiguous argument 'origin/main...HEAD'" } }
     outcome: handoff
     handoff_reason: command_failed
 
