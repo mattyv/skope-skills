@@ -1,0 +1,65 @@
+# Scenarios for `skope SKILL.md --test`. defaults: jev-semgrep is installed,
+# the branch has 6 hunks, and 2 of them change behaviour but none is risky.
+defaults:
+  commands:
+    'command -v semgrep > /dev/null && semgrep --help 2>&1 | grep -q "grep by meaning"': { exit: 0 }
+    Scan.hunks: 6
+    Scan.weakens: 0
+    Scan.errors: 0
+    Scan.io: 0
+    Scan.security: 0
+    Scan.behaviour: 2
+    Careful review.risky_hunks: "src/auth.ts:42\n"
+    Normal review.changed_hunks: "src/parse.ts:10\nsrc/parse.ts:88\n"
+
+scenarios:
+  behaviour-only:
+    outcome: handoff
+    handoff_reason: explicit
+    path: [Scan, Normal review]
+    max_ask_calls: 0
+
+  cosmetic-only:
+    commands: { Scan.behaviour: 0 }
+    outcome: stopped
+    path: [Scan, Cosmetic only]
+
+  no-changes:
+    commands: { Scan.hunks: 0 }
+    outcome: stopped
+    path: [Scan, No changes]
+
+  weakens-a-check:
+    commands: { Scan.weakens: 1 }
+    outcome: handoff
+    path: [Scan, Careful review]
+
+  touches-security:
+    commands: { Scan.security: 1 }
+    outcome: handoff
+    path: [Scan, Careful review]
+
+  changes-error-handling:
+    commands: { Scan.errors: 3 }
+    outcome: handoff
+    path: [Scan, Careful review]
+
+  adds-io:
+    commands: { Scan.io: 1 }
+    outcome: handoff
+    path: [Scan, Careful review]
+
+  no-semgrep:
+    commands: { 'command -v semgrep > /dev/null && semgrep --help 2>&1 | grep -q "grep by meaning"': { exit: 1 } }
+    outcome: handoff
+    path: [Scan, No semgrep]
+
+  diff-fails:
+    commands: { Scan.hunks: { exit: 128, stderr: "fatal: ambiguous argument 'main...HEAD'" } }
+    outcome: handoff
+    handoff_reason: command_failed
+
+  semgrep-errors:
+    commands: { Scan.weakens: "" }
+    outcome: handoff
+    handoff_reason: command_failed
