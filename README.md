@@ -16,8 +16,11 @@ and a 2,000-line CI log into the 40 lines that explain the failure.
 | [ci-failure-triage](skills/ci-failure-triage/SKILL.md) | Finds why the branch's latest run failed and hands over only the relevant log lines; reruns a flaky failure once | Lint, type, test, build, flaky, or something else? |
 | [test-diff-vs-main](skills/test-diff-vs-main/SKILL.md) | Runs the suite on the branch and on the base branch and reports only the failures the branch added | Nothing |
 | [cut-release](skills/cut-release/SKILL.md) | Checks version, tag and CI, then tags, pushes, watches the release workflow and confirms the release has files | Nothing |
+| [review-focus](skills/review-focus/SKILL.md) | Splits the branch's diff into hunks and hands over only those that weaken a check, change error handling, add I/O or touch security; stops if the change is cosmetic | Nothing directly: [jev-semgrep](https://github.com/uehaj/jev-semgrep) judges each hunk, and code decides from the counts |
 
-All four use `git` and `gh`, and act on the current branch.
+They all use `git`, and all but review-focus use `gh`. They act on the current
+branch. review-focus sends every hunk to jev-semgrep's endpoint, so don't run it on
+code that mustn't leave the machine.
 
 ## Use
 
